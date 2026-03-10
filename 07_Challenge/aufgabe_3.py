@@ -1,3 +1,5 @@
+
+
 from operator import ne
 import sys
 sys.path.append("..")
@@ -31,35 +33,76 @@ color_dict = {'a': "Blue", 'b': "Red", 'c': "Blue", 'd': "Blue", 'e': "Red",
                   'k': "Blue", 'l': "Blue", 'm': "Red", 'n': "Yellow", 'o': "Red"}
 
 def doTask(robot : FMLRobot, mqtt : FMLMqtt, camera: FMLCamera):
-    
-    # 这是一个修复后的、可运行的循迹到指定颜色的内部函数
-    def follow_line_until_color(robot, target_color, controller, velocity):
-        print(f"开始寻找颜色: {target_color}...")
+
+    print("任务3启动：首先前进4cm以越过起始线。")
+    robot.drive(0.04) # 前进4cm
+    time.sleep(1) # 等待移动完成
+    robot.stop()
+    print("已越过起始线。")
+
+    # 这是一个新的、更强大的导航函数，能够处理交叉路口
+    def go_to_next_node(robot, current_node, next_node, controller, velocity):
+        """
+        导航机器人从一个节点到下一个节点。
+        - 如果当前节点是红色（交叉口），则执行特殊逻辑（前进、旋转、定位）。
+        - 然后，沿黑线循迹，直到到达目标节点。
+        """
+        current_node_color = color_dict[current_node]
+        target_color = color_dict[next_node]
+
+        print(f"准备从 {current_node}({current_node_color}) 前往 {next_node}({target_color})")
+
+        # 步骤 1: 处理在当前节点的出发逻辑, 特别是红色交叉口
+        if current_node_color == "Red":
+            print("当前节点是红色交叉口，执行特殊导航...")
+            
+            # 1. 向前行驶20cm，进入交叉口中心，以便旋转
+            print("  - 前进20cm")
+            robot.drive(0.2)
+            # FMLRobot.drive() 是非阻塞的，需要等待它完成。
+            # 由于没有编码器反馈，我们根据经验使用 time.sleep()。1.5秒对于20cm是一个合理的估计。
+            time.sleep(1.5)
+            robot.stop()
+
+            # 2. 缓慢旋转，用颜色传感器寻找指向下一个目标节点的颜色路径
+            print(f"  - 旋转以寻找路径颜色: {target_color}")
+            rotation_speed_dps = 45  # 较慢的旋转速度以便检测
+            robot.BP.set_motor_dps(robot.left_motor, rotation_speed_dps)
+            robot.BP.set_motor_dps(robot.right_motor, -rotation_speed_dps)
+
+            while True:
+                # 同时使用左右两个传感器以提高稳定性
+                color_l = robot.get_color_left()
+                color_r = robot.get_color_right()
+                if color_l == target_color or color_r == target_color:
+                    print(f"  - 找到 {target_color} 路径标记，停止旋转。")
+                    robot.stop()
+                    break # 找到了正确的方向
+                time.sleep(0.02) # 短暂延时，避免CPU占用过高
+
+        # 步骤 2: 沿黑线循迹，直到到达目标节点
+        print(f"开始沿黑线行驶，直到看见目标颜色: {target_color}")
         
-        # 【重要优化】：起步时先强制往前开一小段（0.5秒）。
-        # 防止小车还在当前节点（比如 a 点是蓝色），而下一个目标也是蓝色时，小车原地不动直接判断到达。
+        # 在开始循迹前，先短暂前进，确保离开当前节点的颜色区域
         robot.BP.set_motor_dps(robot.left_motor, velocity)
         robot.BP.set_motor_dps(robot.right_motor, velocity)
-        time.sleep(0.5) 
-        
-        while True:
-            # 1. 检测是否到达目标颜色
-            current_color = robot.get_color_left()
-            if current_color == target_color:
-                print(f"成功检测到目标颜色: {target_color}，停车。")
-                robot.stop()
-                
-                # 如果你的小车颜色传感器在车头，停车时可能货叉还没到位置。
-                # 如果需要，可以取消下面这行注释，让小车识别到颜色后再往前稍微开一点对准节点。
-                # robot.drive(0.05)  
-                break
+        time.sleep(0.5)
 
-            # 2. 如果没到目标，执行标准的 PID 循迹逻辑 (提取自 challenge.py)
+        while True:
+            # 检查是否已到达目标
+            color_l = robot.get_color_left()
+            color_r = robot.get_color_right()
+            if color_l == target_color or color_r == target_color:
+                print(f"成功到达节点 {next_node} (颜色: {target_color})")
+                robot.stop()
+                break  # 到达目标，结束本次循迹
+
+            # 执行PID循迹逻辑
             try:
                 current_sensor_value = robot.BP.get_sensor(robot.right_sensor)
                 u = controller.get_u(current_sensor_value)
                 
-                # 限制最大速度差
+                # 限制最大速度差，防止速度过快
                 if velocity + abs(u) > 500:
                     u = (500 - velocity) if u >= 0 else (velocity - 500)
 
@@ -91,15 +134,12 @@ def doTask(robot : FMLRobot, mqtt : FMLMqtt, camera: FMLCamera):
     path_to_storage = dijkstra.dijkstra(graph, start_node, target_storage)
     print(f"路径为: {path_to_storage}")
 
-    # 4. 执行第一段导航
+    # 4. 执行第一段导航，前往存放点
     for i in range(len(path_to_storage) - 1):
         current_node = path_to_storage[i]
         next_node = path_to_storage[i+1]
-        target_color = color_dict[next_node]
-        
-        print(f"-> 正在从节点 {current_node} 前往节点 {next_node}")
-        follow_line_until_color(robot, target_color, controller, velocity)
-        time.sleep(0.5) # 每个节点停顿一下，防止姿态不稳
+        go_to_next_node(robot, current_node, next_node, controller, velocity)
+        time.sleep(0.5) # 每个节点停顿一下，增加稳定性
 
     # 5. 到达存放点，执行卸货
     print(f"========== 到达存放节点 {target_storage} ==========")
@@ -117,10 +157,7 @@ def doTask(robot : FMLRobot, mqtt : FMLMqtt, camera: FMLCamera):
     for i in range(len(path_to_exit) - 1):
         current_node = path_to_exit[i]
         next_node = path_to_exit[i+1]
-        target_color = color_dict[next_node]
-        
-        print(f"-> 正在从节点 {current_node} 前往节点 {next_node}")
-        follow_line_until_color(robot, target_color, controller, velocity)
+        go_to_next_node(robot, current_node, next_node, controller, velocity)
         time.sleep(0.5)
 
     # 8. 任务结束

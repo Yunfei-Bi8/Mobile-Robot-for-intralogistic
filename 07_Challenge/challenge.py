@@ -17,8 +17,7 @@ import aufgabe_8
 
 
 camera = FMLCamera()
-mqtt = FMLMqtt("mqttBroker","gruppe5/robot") #set the topic of mqtt in task 4
-mqtt.connect()
+mqtt = FMLMqtt("mqttBroker","gruppeX/robot")
 
 ##update in challenge 1
 # line_controller = PIController(0,0.00,0)
