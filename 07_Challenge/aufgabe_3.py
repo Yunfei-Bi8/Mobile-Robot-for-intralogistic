@@ -36,7 +36,7 @@ color_dict = {'a': "Blue", 'b': "Red", 'c': "Blue", 'd': "Blue", 'e': "Red",
 # Task 3 专属配置
 # ==========================================
 START_NODE = 'a'        # 仓库入口节点
-TARGET_STORAGE = 'g'    # 目标存储点 (可在 'g', 'i', 'k', 'l' 中更改)
+TARGET_STORAGE = 'k'    # 目标存储点 (可在 'g', 'i', 'k', 'l' 中更改)
 EXIT_NODE = 'n'         # 离开仓库的出口节点
 
 
@@ -46,6 +46,8 @@ def navigate_path(robot: FMLRobot, path: list):
     """
     controller = PIController(kp=1.2, ki=0.0, target_value=50.0)
     velocity = 150
+    flag_spin= False
+    color_counter = 0
     
     print(f"开始导航路径: {' -> '.join(path)}")
     
@@ -53,6 +55,7 @@ def navigate_path(robot: FMLRobot, path: list):
         current_node = path[i-1]
         next_node = path[i]
         target_color = color_dict.get(next_node, "None")
+        print("next node color",target_color)
         
         print(f"\n>> 正在从 {current_node} 前往 {next_node} (目标颜色: {target_color})")
         
@@ -61,13 +64,18 @@ def navigate_path(robot: FMLRobot, path: list):
         # ---------------------------------------------------------
         print("状态: PID 循迹中，等待红色标记...")
         while True:
-            color = robot.get_color_left()
+            # 1. 直接把获取颜色的“方法”传进去（注意：get_color_left 后面不要加括号 ()）
+            # 让 debouncing 函数内部去不断调用它读取新颜色
+            real_color = robot.debouncing(robot.get_color_left)
+
+            print("current color:", real_color)
             
-            if color == "Red":
-                print("【触发】检测到红色！立刻停止 PID 循迹。")
+            # 2. ⚠️ 必须用去抖动后返回的 real_color 来判断，不能用原来的 color
+            if real_color == "Red":
+                print("【触发】检测到红色！。")
                 robot.stop()
                 break
-                
+                        
             # # 安全机制：障碍物检测 (可选)
             # front_distance = robot.get_distance_front()
             # if front_distance != -1 and front_distance < 15:
@@ -95,7 +103,7 @@ def navigate_path(robot: FMLRobot, path: list):
             time.sleep(0.01)
             
         # ---------------------------------------------------------
-        # 步骤 2: 向前直行 20cm
+        # 步骤 2: 向前直行 12cm
         # ---------------------------------------------------------
         print("状态: 驶入路口，向前直行 20cm...")
         robot.drive(0.20)  # drive 接受的是米为单位
@@ -104,6 +112,7 @@ def navigate_path(robot: FMLRobot, path: list):
         # 步骤 3: 旋转并不断检测下方颜色，直到匹配 target_color
         # ---------------------------------------------------------
         print(f"状态: 开始旋转，寻找对应节点 {next_node} 的颜色 [{target_color}]...")
+        flag_spin= True
         # 开启旋转：一侧电机正转，一侧反转 (这里默认右转扫描，如果场地左转多可以把正负号调换)
         robot.BP.set_motor_dps(robot.left_motor, 100)
         robot.BP.set_motor_dps(robot.right_motor, -100)
@@ -111,9 +120,33 @@ def navigate_path(robot: FMLRobot, path: list):
         while True:
             if robot.get_color_left() == target_color:
                 print(f"【触发】匹配到目标颜色 {target_color}！停止旋转。")
+                flag_spin= False
                 robot.stop()
-                break
-            time.sleep(0.01)
+                current_sensor_value = robot.BP.get_sensor(robot.right_sensor)
+                u = controller.get_u(current_sensor_value)
+                
+                # 限制最大速度差
+                if velocity + abs(u) > 500:
+                        u = (500 - velocity) if u >= 0 else (velocity - 500)
+
+                    # 调整左右轮电机速度
+                if u >= 0:
+                        robot.BP.set_motor_dps(robot.right_motor, velocity - abs(u))
+                        robot.BP.set_motor_dps(robot.left_motor, velocity + abs(u))
+                else:
+                        robot.BP.set_motor_dps(robot.right_motor, velocity + abs(u))
+                        robot.BP.set_motor_dps(robot.left_motor, velocity - abs(u))
+
+                color=robot.get_color_left()
+            
+                # 2. ⚠️ 必须用去抖动后返回的 real_color 来判断，不能用原来的 color
+                if color == "Red":
+                    print("【触发】检测到红色！。")
+                    robot.stop()
+                    break
+                
+                    # break
+                time.sleep(0.01)
             
         # 循环结束，进入下一次迭代，立刻恢复 PID 循迹
         print("--> 成功对准新路线，准备恢复 PID 循迹。")
@@ -128,12 +161,13 @@ def doTask(robot: FMLRobot, mqtt: FMLMqtt = None, camera: FMLCamera = None):
     print("="*40)
     
     # 【注意】按照你的要求，仅在任务开始时执行一次：向前移动 8 厘米
-    print("初始化: 向前移动 8cm (0.08m)...")
-    robot.drive(0.08)
+    print("初始化: 向前移动 18cm (0.18m)...")
+    robot.drive(0.18)
     
     # 1. 规划并导航到存储点
     print(f"\n[阶段 1] 计算从入口 {START_NODE} 到 存储点 {TARGET_STORAGE} 的路径...")
     route_to_storage = dijkstra.dijkstra(graph, START_NODE, TARGET_STORAGE)
+    print(route_to_storage)
     navigate_path(robot, route_to_storage)
     
     # 2. 到达存储点区域，寻找绿色标记进行精确卸货
@@ -165,7 +199,7 @@ def doTask(robot: FMLRobot, mqtt: FMLMqtt = None, camera: FMLCamera = None):
     
     # 3. 卸货 (放下叉车)
     print("到达存储位置！正在卸载 EC (降下叉车)...")
-    robot.drop_fork()
+    # robot.drop_fork()
     time.sleep(1) # 给机构一点运作时间
     # 卸货后可以根据情况选择是否后退一点，避免刮碰
     # robot.drive(-0.05) 

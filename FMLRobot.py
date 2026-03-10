@@ -1,5 +1,6 @@
 
 
+
 import brickpi3
 import time
 import math
@@ -256,10 +257,18 @@ class FMLRobot:
         #     print("color not reliably detected")
         
         self.last_color_left = color
-        if color in self.colors:
-            return self.colors[color]
-        else:
-            return "None"
+        
+        time.sleep(0.01)
+        return color
+        # if color in self.colors:
+        #     # color_counter+=1
+        #     return self.colors[color]
+        # else:
+        #     # color_counter=0
+        #     return "None"
+        # if  color_counter ==2:
+        #     return color
+
     
     # To be implemented in 2.1    
     def get_color_right(self):
@@ -570,6 +579,44 @@ class FMLRobot:
         self.stop()
 
 
+    def debouncing(get_color_func, threshold=2, delay=0.01):
+        """
+        正确的颜色去抖动函数
+        
+        :param get_color_func: 一个用于读取当前颜色的函数（必须能动态返回新值）
+        :param threshold: 确认颜色所需的连续相同次数（默认2次）
+        :param delay: 每次读取之间的间隔时间（秒）
+        """
+        last_color = get_color_func() # 获取初始颜色
+        color_counter = 0
+        
+        while True:
+            # 1. 动态读取新的颜色值
+            current_color = get_color_func() 
+            
+            # 2. 判断是否和上一次的颜色相同
+            if current_color == last_color:
+                color_counter += 1
+            else:
+                color_counter = 0
+                # 注意：一旦发现颜色不一样，必须把最新的颜色设为基准！
+                last_color = current_color 
+                
+            # 3. 连续相同次数达到阈值，判定颜色稳定，返回该颜色
+            if color_counter >= threshold:
+                return current_color
+                
+            # 4. 增加微小的延时，避免 CPU 占用过高且给传感器反应时间
+            time.sleep(delay)
+
+            
+
+        
+
+
+
+       
+        
 
        
         
