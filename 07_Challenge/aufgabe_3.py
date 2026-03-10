@@ -84,9 +84,10 @@ def doTask(robot : FMLRobot, mqtt : FMLMqtt, camera: FMLCamera):
         print(f"开始沿黑线行驶，直到看见目标颜色: {target_color}")
         
         # 在开始循迹前，先短暂前进，确保离开当前节点的颜色区域
-        robot.BP.set_motor_dps(robot.left_motor, velocity)
-        robot.BP.set_motor_dps(robot.right_motor, velocity)
-        time.sleep(0.5)
+        # robot.BP.set_motor_dps(robot.left_motor, velocity)
+        # robot.BP.set_motor_dps(robot.right_motor, velocity)
+        # time.sleep(1.5)
+        robot.drive(0.08)
 
         while True:
             # 检查是否已到达目标

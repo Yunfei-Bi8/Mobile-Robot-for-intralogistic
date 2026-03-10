@@ -256,7 +256,10 @@ class FMLRobot:
         #     print("color not reliably detected")
         
         self.last_color_left = color
-        return self.colors[color]
+        if color in self.colors:
+            return self.colors[color]
+        else:
+            return "None"
     
     # To be implemented in 2.1    
     def get_color_right(self):
@@ -272,7 +275,10 @@ class FMLRobot:
         #     print("color not reliably detected")
 
         self.last_color_right = color
-        return self.colors[color]
+        if color in self.colors:
+            return self.colors[color]
+        else:
+            return "None"
 
      
     ## Actor stuff
