@@ -1,5 +1,3 @@
-
-
 from operator import ne
 import sys
 sys.path.append("..")
@@ -11,6 +9,7 @@ from FMLMqtt import FMLMqtt
 import dijkstra
 import time
 
+# 场地节点拓扑图
 graph = {"a": {"b": 2, "d": 5, "f": 6},
           "b": {"c": 3, "e": 2},
           "c": {"g": 8, "e": 1},
@@ -28,139 +27,153 @@ graph = {"a": {"b": 2, "d": 5, "f": 6},
           "o": {},
 }
 
+# 节点对应的目标颜色映射
 color_dict = {'a': "Blue", 'b': "Red", 'c': "Blue", 'd': "Blue", 'e': "Red",
                   'f': "Yellow", 'g': "Blue", 'h': "Yellow", 'i': "Red", 'j': "Red",
                   'k': "Blue", 'l': "Blue", 'm': "Red", 'n': "Yellow", 'o': "Red"}
 
-def doTask(robot : FMLRobot, mqtt : FMLMqtt, camera: FMLCamera):
+# ==========================================
+# Task 3 专属配置
+# ==========================================
+START_NODE = 'a'        # 仓库入口节点
+TARGET_STORAGE = 'g'    # 目标存储点 (可在 'g', 'i', 'k', 'l' 中更改)
+EXIT_NODE = 'n'         # 离开仓库的出口节点
 
-    print("任务3启动：首先前进4cm以越过起始线。")
-    robot.drive(0.04) # 前进4cm
-    time.sleep(1) # 等待移动完成
-    robot.stop()
-    print("已越过起始线。")
 
-    # 这是一个新的、更强大的导航函数，能够处理交叉路口
-    def go_to_next_node(robot, current_node, next_node, controller, velocity):
-        """
-        导航机器人从一个节点到下一个节点。
-        - 如果当前节点是红色（交叉口），则执行特殊逻辑（前进、旋转、定位）。
-        - 然后，沿黑线循迹，直到到达目标节点。
-        """
-        current_node_color = color_dict[current_node]
-        target_color = color_dict[next_node]
-
-        print(f"准备从 {current_node}({current_node_color}) 前往 {next_node}({target_color})")
-
-        # 步骤 1: 处理在当前节点的出发逻辑, 特别是红色交叉口
-        if current_node_color == "Red":
-            print("当前节点是红色交叉口，执行特殊导航...")
-            
-            # 1. 向前行驶20cm，进入交叉口中心，以便旋转
-            print("  - 前进20cm")
-            robot.drive(0.2)
-            # FMLRobot.drive() 是非阻塞的，需要等待它完成。
-            # 由于没有编码器反馈，我们根据经验使用 time.sleep()。1.5秒对于20cm是一个合理的估计。
-            time.sleep(1.5)
-            robot.stop()
-
-            # 2. 缓慢旋转，用颜色传感器寻找指向下一个目标节点的颜色路径
-            print(f"  - 旋转以寻找路径颜色: {target_color}")
-            rotation_speed_dps = 45  # 较慢的旋转速度以便检测
-            robot.BP.set_motor_dps(robot.left_motor, rotation_speed_dps)
-            robot.BP.set_motor_dps(robot.right_motor, -rotation_speed_dps)
-
-            while True:
-                # 同时使用左右两个传感器以提高稳定性
-                color_l = robot.get_color_left()
-                color_r = robot.get_color_right()
-                if color_l == target_color or color_r == target_color:
-                    print(f"  - 找到 {target_color} 路径标记，停止旋转。")
-                    robot.stop()
-                    break # 找到了正确的方向
-                time.sleep(0.02) # 短暂延时，避免CPU占用过高
-
-        # 步骤 2: 沿黑线循迹，直到到达目标节点
-        print(f"开始沿黑线行驶，直到看见目标颜色: {target_color}")
-        
-        # 在开始循迹前，先短暂前进，确保离开当前节点的颜色区域
-        # robot.BP.set_motor_dps(robot.left_motor, velocity)
-        # robot.BP.set_motor_dps(robot.right_motor, velocity)
-        # time.sleep(1.5)
-        robot.drive(0.08)
-
-        while True:
-            # 检查是否已到达目标
-            color_l = robot.get_color_left()
-            color_r = robot.get_color_right()
-            if color_l == target_color or color_r == target_color:
-                print(f"成功到达节点 {next_node} (颜色: {target_color})")
-                robot.stop()
-                break  # 到达目标，结束本次循迹
-
-            # 执行PID循迹逻辑
-            try:
-                current_sensor_value = robot.BP.get_sensor(robot.right_sensor)
-                u = controller.get_u(current_sensor_value)
-                
-                # 限制最大速度差，防止速度过快
-                if velocity + abs(u) > 500:
-                    u = (500 - velocity) if u >= 0 else (velocity - 500)
-
-                # 设置左右轮速度
-                if u >= 0:
-                    robot.BP.set_motor_dps(robot.right_motor, velocity - abs(u))
-                    robot.BP.set_motor_dps(robot.left_motor, velocity + abs(u))
-                else:
-                    robot.BP.set_motor_dps(robot.right_motor, velocity + abs(u))
-                    robot.BP.set_motor_dps(robot.left_motor, velocity - abs(u))
-            except Exception:
-                pass # 忽略传感器偶尔的读取失败
-                
-            time.sleep(0.01)
-
-    # ================= 任务主逻辑开始 =================
-    
-    # 1. 初始节点设置
-    start_node = 'a'
-    target_storage = 'k'  # 你可以在这里改成 'g', 'i', 'k' 或 'l'
-    exit_node = 'n'
-    
-    # 2. 初始化已被证明有效的 PI 控制器和基础速度
+def navigate_path(robot: FMLRobot, path: list):
+    """
+    根据给定的节点列表依次导航，执行你要求的状态机逻辑
+    """
     controller = PIController(kp=1.2, ki=0.0, target_value=50.0)
     velocity = 150
-
-    # 3. 计算去存放点(k)的路径
-    print(f"计算从 {start_node} 到 {target_storage} 的路径...")
-    path_to_storage = dijkstra.dijkstra(graph, start_node, target_storage)
-    print(f"路径为: {path_to_storage}")
-
-    # 4. 执行第一段导航，前往存放点
-    for i in range(len(path_to_storage) - 1):
-        current_node = path_to_storage[i]
-        next_node = path_to_storage[i+1]
-        go_to_next_node(robot, current_node, next_node, controller, velocity)
-        time.sleep(0.5) # 每个节点停顿一下，增加稳定性
-
-    # 5. 到达存放点，执行卸货
-    print(f"========== 到达存放节点 {target_storage} ==========")
-    robot.stop()
-    print("正在卸货 (放下货叉)...")
-    robot.drop_fork()
-    time.sleep(1) # 卸货后等待1秒
-
-    # 6. 计算离开去(n)的路径
-    print(f"计算从 {target_storage} 到离场点 {exit_node} 的路径...")
-    path_to_exit = dijkstra.dijkstra(graph, target_storage, exit_node)
-    print(f"离开路径为: {path_to_exit}")
     
-    # 7. 执行离开导航
-    for i in range(len(path_to_exit) - 1):
-        current_node = path_to_exit[i]
-        next_node = path_to_exit[i+1]
-        go_to_next_node(robot, current_node, next_node, controller, velocity)
-        time.sleep(0.5)
+    print(f"开始导航路径: {' -> '.join(path)}")
+    
+    for i in range(1, len(path)):
+        current_node = path[i-1]
+        next_node = path[i]
+        target_color = color_dict.get(next_node, "None")
+        
+        print(f"\n>> 正在从 {current_node} 前往 {next_node} (目标颜色: {target_color})")
+        
+        # ---------------------------------------------------------
+        # 步骤 1: PID 沿黑线行驶，直到检测到红色
+        # ---------------------------------------------------------
+        print("状态: PID 循迹中，等待红色标记...")
+        while True:
+            color = robot.get_color_left()
+            
+            if color == "Red":
+                print("【触发】检测到红色！立刻停止 PID 循迹。")
+                robot.stop()
+                break
+                
+            # # 安全机制：障碍物检测 (可选)
+            # front_distance = robot.get_distance_front()
+            # if front_distance != -1 and front_distance < 15:
+            #     print("警告：前方检测到障碍物！停车等待。")
+            #     robot.stop()
+            #     time.sleep(1) # 可以根据需要调整避障逻辑
+            #     continue
 
-    # 8. 任务结束
-    print(f"========== 成功到达离场节点 {exit_node}，任务 3 结束 ==========")
+            # 基础 PID 循迹
+            current_sensor_value = robot.BP.get_sensor(robot.right_sensor)
+            u = controller.get_u(current_sensor_value)
+                
+                # 限制最大速度差
+            if velocity + abs(u) > 500:
+                    u = (500 - velocity) if u >= 0 else (velocity - 500)
+
+                # 调整左右轮电机速度
+            if u >= 0:
+                    robot.BP.set_motor_dps(robot.right_motor, velocity - abs(u))
+                    robot.BP.set_motor_dps(robot.left_motor, velocity + abs(u))
+            else:
+                    robot.BP.set_motor_dps(robot.right_motor, velocity + abs(u))
+                    robot.BP.set_motor_dps(robot.left_motor, velocity - abs(u))
+                
+            time.sleep(0.01)
+            
+        # ---------------------------------------------------------
+        # 步骤 2: 向前直行 20cm
+        # ---------------------------------------------------------
+        print("状态: 驶入路口，向前直行 20cm...")
+        robot.drive(0.20)  # drive 接受的是米为单位
+        
+        # ---------------------------------------------------------
+        # 步骤 3: 旋转并不断检测下方颜色，直到匹配 target_color
+        # ---------------------------------------------------------
+        print(f"状态: 开始旋转，寻找对应节点 {next_node} 的颜色 [{target_color}]...")
+        # 开启旋转：一侧电机正转，一侧反转 (这里默认右转扫描，如果场地左转多可以把正负号调换)
+        robot.BP.set_motor_dps(robot.left_motor, 100)
+        robot.BP.set_motor_dps(robot.right_motor, -100)
+        
+        while True:
+            if robot.get_color_left() == target_color:
+                print(f"【触发】匹配到目标颜色 {target_color}！停止旋转。")
+                robot.stop()
+                break
+            time.sleep(0.01)
+            
+        # 循环结束，进入下一次迭代，立刻恢复 PID 循迹
+        print("--> 成功对准新路线，准备恢复 PID 循迹。")
+
+
+def doTask(robot: FMLRobot, mqtt: FMLMqtt = None, camera: FMLCamera = None):
+    """
+    执行任务 3 的核心逻辑：存储 EC 并离开仓库
+    """
+    print("\n" + "="*40)
+    print(f"--- 任务 3 开始：将 EC 运送至存储点 {TARGET_STORAGE} ---")
+    print("="*40)
+    
+    # 【注意】按照你的要求，仅在任务开始时执行一次：向前移动 8 厘米
+    print("初始化: 向前移动 8cm (0.08m)...")
+    robot.drive(0.08)
+    
+    # 1. 规划并导航到存储点
+    print(f"\n[阶段 1] 计算从入口 {START_NODE} 到 存储点 {TARGET_STORAGE} 的路径...")
+    route_to_storage = dijkstra.dijkstra(graph, START_NODE, TARGET_STORAGE)
+    navigate_path(robot, route_to_storage)
+    
+    # 2. 到达存储点区域，寻找绿色标记进行精确卸货
+    print(f"\n[阶段 2] 已到达节点 {TARGET_STORAGE} 区域。正在寻找绿色(Green)停车标记...")
+    controller = PIController(kp=1.2, ki=0.0, target_value=50.0)
+    velocity = 150
+    
+    while True:
+        if robot.get_color_left() == "Green":
+            print("检测到绿色标记！停车。")
+            robot.stop()
+            break
+            
+        # 维持基础循迹找绿块
+        try:
+            current_sensor_value = robot.BP.get_sensor(robot.right_sensor)
+            u = controller.get_u(current_sensor_value)
+            if velocity + abs(u) > 500:
+                u = (500 - velocity) if u >= 0 else (velocity - 500)
+            if u >= 0:
+                robot.BP.set_motor_dps(robot.right_motor, velocity - abs(u))
+                robot.BP.set_motor_dps(robot.left_motor, velocity + abs(u))
+            else:
+                robot.BP.set_motor_dps(robot.right_motor, velocity + abs(u))
+                robot.BP.set_motor_dps(robot.left_motor, velocity - abs(u))
+        except Exception:
+            pass
+        time.sleep(0.01)
+    
+    # 3. 卸货 (放下叉车)
+    print("到达存储位置！正在卸载 EC (降下叉车)...")
+    robot.drop_fork()
+    time.sleep(1) # 给机构一点运作时间
+    # 卸货后可以根据情况选择是否后退一点，避免刮碰
+    # robot.drive(-0.05) 
+    
+    # 4. 规划并导航离开仓库
+    print(f"\n[阶段 3] 卸货完成。计算从 {TARGET_STORAGE} 到 出口 {EXIT_NODE} 的路径...")
+    route_to_exit = dijkstra.dijkstra(graph, TARGET_STORAGE, EXIT_NODE)
+    navigate_path(robot, route_to_exit)
+    
+    print("\n✅ 任务 3 圆满完成！机器人已到达出口。")
     robot.stop()

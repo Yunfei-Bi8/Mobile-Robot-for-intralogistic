@@ -98,7 +98,7 @@ with FMLRobot() as robot:
         if current_task_number == 2:
             aufgabe_2.doTask(robot,mqtt,camera)
         if current_task_number == 3:
-            aufgabe_3.doTask(robot,mqtt,camera)
+            aufgabe_3.doTask(robot)
         if current_task_number == 4:
             aufgabe_4.doTask(robot,mqtt,camera)
         if current_task_number == 5:
