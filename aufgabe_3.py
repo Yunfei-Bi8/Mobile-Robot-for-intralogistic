@@ -113,7 +113,7 @@ def doTask(robot : FMLRobot,mqtt : FMLMqtt,camera: FMLCamera, end_node):
     print("move forward from centre for 9 cm")
     # robot.drop_fork()#we drop the good
     robot.drive(-0.09)#we move back to the centre again
-    print("move backward to centre")
+    print("move backward to centre and starting to go for exit node!")
     # robot.lift_fork()#we lift the fork again
 
     # robot.drive(-0.2)#here we have to move backward for 20cm. to the red mark
@@ -129,8 +129,19 @@ def doTask(robot : FMLRobot,mqtt : FMLMqtt,camera: FMLCamera, end_node):
     navigate_from_storage_to_exit(robot, start_node, end_node, route_to_exit, pi_controller)#navigate to the exit node
 
     print ("Task 3 finished")
+    print("Move to the start of next task")
+    #now we move to the start of the next task
+    robot.drive(0.12)
+    color=robot.get_color_left()
+    while(color!="Red"):
+    # Turn around until right color is found
+        robot.turn(-15)
+        color = robot.get_color_left()
+        print ("Color found is", color)
+    print("Moving to the starting position of next task to scan code")
+    robot.follower_line(velocity=200,controller=pi_controller, stop_color = "Red")
     robot.stop()
-    time.sleep(10)
+    time.sleep(5)
 
 
 
