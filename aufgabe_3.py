@@ -100,6 +100,7 @@ def doTask(robot : FMLRobot,mqtt : FMLMqtt,camera: FMLCamera, end_node):
     
     # Now move forward to the center of the node and look for the green color
     robot.drive(0.2) #here we are at the centre
+    print("move forward for 20 cm to reach the centre")
     #now we rotate to find the green mark(the storage place for dropping good)
     color=robot.get_color_left()
     while(color!="Green"):
@@ -107,14 +108,15 @@ def doTask(robot : FMLRobot,mqtt : FMLMqtt,camera: FMLCamera, end_node):
             robot.turn(-15)
             color = robot.get_color_left()
             print ("Color found is", color)
+    print("found green mark and ready to move forward to drop the good")
     robot.drive(0.09) #now we move forward further to the green mark to drop our good
-    print("move foeward from centre for 9 cm")
+    print("move forward from centre for 9 cm")
     # robot.drop_fork()#we drop the good
     robot.drive(-0.09)#we move back to the centre again
     print("move backward to centre")
     # robot.lift_fork()#we lift the fork again
 
-    robot.drive(-0.2)#here we have to move backward for 20cm. to the red mark
+    # robot.drive(-0.2)#here we have to move backward for 20cm. to the red mark
     #because in the navigate func., the robot still move 20 cm forward to the centre
 
    
