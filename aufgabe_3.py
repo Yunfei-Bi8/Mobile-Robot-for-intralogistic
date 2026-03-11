@@ -128,10 +128,10 @@ def doTask(robot : FMLRobot,mqtt : FMLMqtt,camera: FMLCamera, end_node):
     route_to_exit = dijkstra(graph, start_node, end_node)
     navigate_from_storage_to_exit(robot, start_node, end_node, route_to_exit, pi_controller)#navigate to the exit node
 
-    print ("Task 3 finished")
+    
     print("Move to the start of next task")
     #now we move to the start of the next task
-    robot.drive(0.12)
+    robot.drive(0.20)
     color=robot.get_color_left()
     while(color!="Red"):
     # Turn around until right color is found
@@ -142,6 +142,7 @@ def doTask(robot : FMLRobot,mqtt : FMLMqtt,camera: FMLCamera, end_node):
     robot.follower_line(velocity=200,controller=pi_controller, stop_color = "Red")
     robot.stop()
     time.sleep(5)
+    print ("Task 3 finished")
 
 
 
