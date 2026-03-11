@@ -61,7 +61,10 @@ def navigate_from_storage_to_exit(robot, start_node, end_node, route, controller
     current_node = start_node
     # This while should drive to the center of the node
     # and scan the colors until the correct color is detected
-    flag_for_moving_forward=False
+    #this flag is to make sure that only in the first interation of the loop, the robot will not move forward for 20cm,
+    #because here when we go back from the storage point, we are already at the centre point and we are ready for rotating to find the right color
+    #but for the other iter. of the loop, we have to move forward for 20 cm to reach the centre
+    flag_for_moving_forward=False 
     while (current_node is not end_node):
         if flag_for_moving_forward:
             robot.drive(0.2) 
